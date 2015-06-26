@@ -1,2 +1,4 @@
-# coinbaser
-Coinbase REST API for Rust
+# Coinbaser
+Coinbase REST API for Rust.
+
+Not yet functional.
