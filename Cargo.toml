@@ -1,0 +1,10 @@
+[package]
+name = "coinbaser"
+version = "0.1.0"
+authors = ["Patrick Moriarty <pataroose@gmail.com>"]
+
+[[bin]]
+name = "coinbaser"
+
+[dependencies]
+hyper = "0.5.2"
