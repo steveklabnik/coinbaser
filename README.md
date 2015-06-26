@@ -1,5 +1,5 @@
 # Coinbaser
-Coinbase REST API for Rust.
+Coinbase Exchange REST API for Rust.
 
 Not yet functional.
 
