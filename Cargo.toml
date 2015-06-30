@@ -2,9 +2,17 @@
 name = "coinbaser"
 version = "0.1.0"
 authors = ["Patrick Moriarty <pataroose@gmail.com>"]
+description = "Coinbase Exchange API for Rust."
+documentation = "http://patrickjm.github.io/doc/coinbaser/coinbaser/"
+repository = "https://github.com/patrickjm/coinbaser"
+readme = "README.md"
+keywords = ["coinbase", "coinbaser", "bitcoin", "exchange"]
+license = "MIT"
 
 [[bin]]
 name = "coinbaser"
 
 [dependencies]
 hyper = "0.5.2"
+chrono = "0.2"
+uuid = "0.1"

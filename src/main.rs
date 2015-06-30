@@ -1,4 +1,6 @@
 extern crate hyper;
+extern crate chrono;
+extern crate uuid;
 
 mod coinbaser;
 pub mod error;
