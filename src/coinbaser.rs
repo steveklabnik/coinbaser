@@ -1,6 +1,5 @@
 #[allow(dead_code)]
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::io::Error as IoError;
 #[allow(unused_imports)] use std::io::{self, Read};
@@ -9,11 +8,8 @@ use hyper::client::Client;
 use hyper::header::{Headers, UserAgent};
 use hyper::status::StatusCode;
 use hyper::Url;
-use serde::{Deserialize, Deserializer};
-use serde::de::Visitor;
+use rustc_serialize::{Decodable};
 use uuid::Uuid;
-
-use error::Error as _CoinError;
 
 pub const DEFAULT_ENDPOINT: &'static str = "https://api.exchange.coinbase.com";
 pub const DEFAULT_SANDBOX_ENDPOINT: &'static str = "https://api-public.sandbox.exchange.coinbase.com";
@@ -70,91 +66,82 @@ pub fn http_get(path: &str, agent: &str) -> Result<String, HttpGetError> {
 	}
 }
 
-/// Used to validate data when converting from JSON dummy structures.
-struct BuilderState {
-	pub currencies: HashMap<String, Currency>
+/// Passable state of the server
+pub struct State {
+	pub currencies: Vec<Currency>
 }
 
-impl BuilderState {
-	/// Searches for a currency with an abbreviation of `key`
-	pub fn try_currency(&self, key: &str) -> Option<Currency> {
-		for (id, cur) in &self.currencies {
-			if id == key {
-				return Some(Currency {
-					id: key.to_string(),
-					name: cur.name.clone(),
-					min_size: cur.min_size
-				});
+impl State {
+	pub fn get_curr(&self, key: &str) -> Option<&Currency> {
+		for curr in &self.currencies {
+			if curr.id == key {
+				return Some(&curr);
 			}
 		}
 		None
 	}
 }
 
-/// Converter from a dummy struct to validated data
-trait Builder<F, E> {
-	fn build(state: &BuilderState, from: F) -> Result<Self, E>;
-}
-
-/// Occurs on bad JSON
+/// Server result doesn't match state
 pub enum ValidationError {
-	BadCurrency(String),
-	BadDecimal(String)
+	BadCurrency(String)
 }
 
 ///https://docs.exchange.coinbase.com/#products
-#[derive(Debug)]
-pub struct Product {
-	pub id: (Currency, Currency),
-	pub base_currency: Currency,
-	pub quote_currency: Currency,
+#[derive(Debug, PartialEq)]
+pub struct Product<'a> {
+	pub id: (&'a Currency, &'a Currency),
+	pub base_currency: &'a Currency,
+	pub quote_currency: &'a Currency,
 	pub base_min_size: Price,
 	pub base_max_size: Price,
 	pub quote_increment: Price
 }
 
-#[derive(Debug, Deserialize)]
-struct DummyProduct {
-	pub id: String,
-	pub base_currency: String,
-	pub quote_currency: String,
-	pub base_min_size: String,
-	pub base_max_size: String,
-	pub quote_increment: String
-}
+mod dummy_product {
+	use super::{Currency, Price, Product, State, ValidationError};
+	use std::convert::From;
 
-fn get_price(key: &str) -> Result<Price, ValidationError> {
-	key.parse().map_err(|_| ValidationError::BadDecimal("".to_string()))
-}
-impl Builder<DummyProduct, ValidationError> for Product {
-	fn build(state: &BuilderState, from: DummyProduct) -> Result<Product, ValidationError> {
-		// does the provided currency ID exist from what we've loaded?
-		fn get_curr(state: &BuilderState, key: Option<&&str>) -> Result<Currency, ValidationError> {
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyProduct {
+		pub id: String,
+		pub base_currency: String,
+		pub quote_currency: String,
+		pub base_min_size: Price,
+		pub base_max_size: Price,
+		pub quote_increment: Price
+	}
+
+	impl <'a> Product<'a> {
+		// checks if the provided currency ID exist from what we've loaded
+		fn get_curr(state: &'a State, key: Option<&&str>) -> Result<&'a Currency, ValidationError> {
 			if let Some(key) = key {
-				match state.try_currency(key.clone()) {
+				match state.get_curr(key.clone()) {
 					Some(cur) => Ok(cur),
-					None => Err(ValidationError::BadCurrency(format!("Unknown currency {}", key)))
+					None => Err(ValidationError::BadCurrency(format!("Unknown currency `{}`, maybe refresh the list?", key)))
 				}
-			} else {
-				// key was passed as None which means that the string split failed
+			} else { // key was passed as None which means that the string split failed
 				Err(ValidationError::BadCurrency("Parse error".to_string()))
 			}
 		}
-		// split the "BASE-QUOTE" format into two
-		let key: Vec<&str> = from.id.split("-").collect();
-		let (base, quote) = (
-			try!(get_curr(state, key.get(0))),
-			try!(get_curr(state, key.get(1)))
-		);
-		// build
-		Ok(Product {
-			id: (base.clone(), quote.clone()),
-			base_currency: base,
-			quote_currency: quote,
-			base_min_size: try!(get_price(&from.base_min_size)),
-			base_max_size: try!(get_price(&from.base_max_size)),
-			quote_increment: try!(get_price(&from.quote_increment))
-		})
+
+		pub fn from_dummy(state: &'a State, p: DummyProduct) -> Result<Self, ValidationError> {
+			// split the "BASE-QUOTE" format into two
+			let key: Vec<&str> = p.id.split("-").collect();
+			let (base, quote) = (
+				try!(Product::get_curr(state, key.get(0))),
+				try!(Product::get_curr(state, key.get(1)))
+			);
+			// build
+			Ok(Product {
+				id: (base, quote),
+				base_currency: base,
+				quote_currency: quote,
+				base_min_size: p.base_min_size,
+				base_max_size: p.base_max_size,
+				quote_increment: p.quote_increment
+			})
+		}
 	}
 }
 
@@ -167,11 +154,83 @@ pub struct Order {
 	pub id: Option<Uuid>
 }
 
-
 /// https://docs.exchange.coinbase.com/#get-product-order-book
+#[derive(Debug)]
 pub struct OrderBook {
 	pub bids: Vec<Order>,
 	pub asks: Vec<Order>
+}
+
+mod dummy_orderbook {
+	use rustc_serialize::Decodable;
+	use super::{Price, Order, OrderBook};
+	use uuid::{ParseError, Uuid};
+	#[derive(Debug, PartialEq, RustcDecodable)]
+	pub struct DummyOrder(Price, Price, i32);
+	#[derive(Debug, PartialEq, RustcDecodable)]
+	pub struct DummyOrderLvl3(Price, Price, String);
+
+	impl Order {
+		pub fn from_order(o: DummyOrder) -> Self {
+			Order {
+				price: o.0,
+				size: o.1,
+				num_orders: Some(o.2),
+				id: None
+			}
+		}
+
+		pub fn from_order3(o: DummyOrderLvl3) -> Result<Self, ParseError> {
+			use std::str::FromStr;
+			Ok(Order {
+				price: o.0,
+				size: o.1,
+				num_orders: None,
+				id: Some(try!(Uuid::from_str(&o.2)))
+			})
+		}
+	}
+
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyOrderBook {
+		pub bids: Vec<DummyOrder>,
+		pub asks: Vec<DummyOrder>
+	}
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyOrderBookLvl3 {
+		pub bids: Vec<DummyOrderLvl3>,
+		pub asks: Vec<DummyOrderLvl3>
+	}
+
+	impl OrderBook {
+		pub fn from_orderbook(d: DummyOrderBook) -> Self {
+			OrderBook {
+				bids: d.bids.into_iter().map(|b| Order::from_order(b)).collect(),
+				asks: d.asks.into_iter().map(|b| Order::from_order(b)).collect()
+			}
+		}
+
+		pub fn from_orderbook3(d: DummyOrderBookLvl3) -> Result<Self, ParseError> {
+			let mut bids: Vec<Order> = Vec::new();
+			for bid in d.bids {
+				match Order::from_order3(bid) {
+					Ok(bid) => bids.push(bid),
+					Err(e) => { return Err(e); }
+				}
+			}
+			let mut asks: Vec<Order> = Vec::new();
+			for ask in d.asks {
+				match Order::from_order3(ask) {
+					Ok(ask) => asks.push(ask),
+					Err(e) => { return Err(e); }
+				}
+			}
+			Ok(OrderBook {
+				bids: bids,
+				asks: asks
+			})
+		}
+	}
 }
 
 ///https://docs.exchange.coinbase.com/#get-product-ticker
@@ -183,7 +242,34 @@ pub struct Ticker {
 	pub time: DateTime<UTC>
 }
 
-#[derive(Debug)]
+mod dummy_ticker {
+	use chrono::format::ParseError;
+	use rustc_serialize::Decodable;
+	use super::{Price, Ticker};
+
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyTicker {
+		pub trade_id: i32,
+		pub price: Price,
+		pub size: Price,
+		pub time: String
+	}
+
+	impl Ticker {
+		pub fn from_dummy(t: DummyTicker) -> Result<Self, ParseError> {
+			use chrono::{DateTime, UTC};
+			use std::str::FromStr;
+			Ok(Ticker {
+				trade_id: t.trade_id,
+				price: t.price,
+				size: t.size,
+				time: try!(DateTime::<UTC>::from_str(&t.time))
+			})
+		}
+	}
+}
+
+#[derive(Debug, RustcDecodable)]
 pub enum TradeSide {
 	Buy,
 	Sell
@@ -200,8 +286,36 @@ pub struct Trade {
 	pub side: TradeSide
 }
 
+mod dummy_trade {
+	use chrono::{DateTime, UTC, ParseError};
+	use rustc_serialize::Decodable;
+	use super::{Price, Trade, TradeSide};
+
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyTrade {
+		pub time: String,
+		pub trade_id: i64,
+		pub price: Price,
+		pub size: Price,
+		pub side: TradeSide
+	}
+
+	impl Trade {
+		pub fn from_dummy(t: DummyTrade) -> Result<Self, ParseError> {
+			use std::str::FromStr;
+			Ok(Trade {
+				time: try!(DateTime::<UTC>::from_str(&t.time)),
+				trade_id: t.trade_id,
+				price: t.price,
+				size: t.size,
+				side: t.side
+			})
+		}
+	}
+}
+
 ///https://docs.exchange.coinbase.com/#get-historic-rates
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct HistoricRate {
 	pub time: DateTime<UTC>,
 	pub low: Price,
@@ -211,8 +325,38 @@ pub struct HistoricRate {
 	pub volume: f64
 }
 
+mod dummy_historic {
+	use chrono::{DateTime, UTC, ParseError};
+	use rustc_serialize::Decodable;
+	use super::{Price, HistoricRate};
+
+	#[derive(Debug, RustcDecodable)]
+	pub struct DummyHistoricRate {
+		pub time: String,
+		pub low: Price,
+		pub high: Price,
+		pub open: Price,
+		pub close: Price,
+		pub volume: f64
+	}
+
+	impl HistoricRate {
+		pub fn from_dummy(t: DummyHistoricRate) -> Result<Self, ParseError> {
+			use std::str::FromStr;
+			Ok(HistoricRate {
+				time: try!(DateTime::<UTC>::from_str(&t.time)),
+				low: t.low,
+				high: t.high,
+				open: t.open,
+				close: t.close,
+				volume: t.volume
+			})
+		}
+	}
+}
+
 ///https://docs.exchange.coinbase.com/#get-24hr-stats
-#[derive(Debug, Deserialize)]
+#[derive(Debug, RustcDecodable)]
 pub struct DayStat {
 	pub open: Price,
 	pub high: Price,
@@ -221,9 +365,33 @@ pub struct DayStat {
 }
 
 ///https://docs.exchange.coinbase.com/#currencies
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, PartialEq, RustcDecodable)]
 pub struct Currency {
 	pub id: String,
 	pub name: String,
 	pub min_size: Price
+}
+
+pub fn tester() {
+	use rustc_serialize::{json, Decoder};
+
+	println!("{}/currencies", DEFAULT_ENDPOINT);
+	let down = http_get(&format!("{}/currencies", DEFAULT_ENDPOINT), "hyper/0.6.0/coinbaser");
+	let down = match down {
+		Ok(res) => res,
+		Err(e) => {
+			println!("{:?}", e);
+			return;
+		}
+	};
+	let down = down.trim();
+	let t: Currency = match json::decode(down) {
+		Ok(j) => j,
+		Err(e) => {
+			println!("{:?}", e);
+			return;
+		}
+	};
+
+	println!("{:?}", t);
 }
