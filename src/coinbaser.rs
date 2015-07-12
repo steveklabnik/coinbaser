@@ -388,7 +388,7 @@ pub fn tester() {
 	let t: Currency = match json::decode(down) {
 		Ok(j) => j,
 		Err(e) => {
-			println!("{:?}", e);
+			println!("e {:?}", e);
 			return;
 		}
 	};
