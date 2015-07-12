@@ -4,6 +4,6 @@
 [travis]: https://travis-ci.org/patrickjm/coinbaser
 [crates-image]: http://meritbadge.herokuapp.com/coinbaser
 [crates]: https://crates.io/crates/coinbaser
-Coinbase Exchange REST API for Rust. [Documentation](http://patrickjm.github.io/doc/coinbaser/coinbaser/)
+Coinbase Exchange REST API for Rust.
 
 Not functional.
