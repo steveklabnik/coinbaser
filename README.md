@@ -6,11 +6,4 @@
 [crates]: https://crates.io/crates/coinbaser
 Coinbase Exchange REST API for Rust. [Documentation](http://patrickjm.github.io/doc/coinbaser/coinbaser/)
 
-Not yet functional.
-
-#### Roadmap
-- [ ] REST read-only calls (market data)
-- [ ] Authentication, dangerous calls (trades)
-- [ ] Streaming API
-- [ ] [FIX API](https://docs.exchange.coinbase.com/#fix-api)
-
+Not functional.
