@@ -1,6 +1,6 @@
 [package]
 name = "coinbaser"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Patrick Moriarty <pataroose@gmail.com>"]
 description = "Coinbase Exchange API for Rust."
 documentation = "http://patrickjm.github.io/doc/coinbaser/coinbaser/"
