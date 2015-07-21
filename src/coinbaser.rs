@@ -8,7 +8,6 @@ use hyper::client::Client;
 use hyper::header::{Headers, UserAgent};
 use hyper::status::StatusCode;
 use hyper::Url;
-use rustc_serialize::{Decodable};
 use uuid::Uuid;
 
 pub const DEFAULT_ENDPOINT: &'static str = "https://api.exchange.coinbase.com";
@@ -162,7 +161,6 @@ pub struct OrderBook {
 }
 
 mod dummy_orderbook {
-	use rustc_serialize::Decodable;
 	use super::{Price, Order, OrderBook};
 	use uuid::{ParseError, Uuid};
 	#[derive(Debug, PartialEq, RustcDecodable)]
@@ -288,7 +286,6 @@ pub struct Trade {
 
 mod dummy_trade {
 	use chrono::{DateTime, UTC, ParseError};
-	use rustc_serialize::Decodable;
 	use super::{Price, Trade, TradeSide};
 
 	#[derive(Debug, RustcDecodable)]
@@ -327,7 +324,6 @@ pub struct HistoricRate {
 
 mod dummy_historic {
 	use chrono::{DateTime, UTC, ParseError};
-	use rustc_serialize::Decodable;
 	use super::{Price, HistoricRate};
 
 	#[derive(Debug, RustcDecodable)]
@@ -373,7 +369,7 @@ pub struct Currency {
 }
 
 pub fn tester() {
-	use rustc_serialize::{json, Decoder};
+	use rustc_serialize::json;
 
 	println!("{}/currencies", DEFAULT_ENDPOINT);
 	let down = http_get(&format!("{}/currencies", DEFAULT_ENDPOINT), "hyper/0.6.0/coinbaser");
